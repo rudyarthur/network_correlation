@@ -34,46 +34,66 @@ def data_permutations(x, Np):
 #Compute the p-value of r given an estimate of the distribution rs = [ estimate1, estimate2, ... ]	
 #Frequently we use 999 samples and +1 smoothing factor	
 def pval(rs, r, alt="greater", smooth=0):
-	larger = (np.array(rs) >= r).sum()
+
+	m=1
+	if alt == "lesser": m=-1
+	larger = (m*np.array(rs) >= m*r).sum()
 	if alt == "two-tailed" and (len(rs) - larger) < larger: larger = len(rs) - larger
 	return (larger + smooth) / (len(rs) + smooth)
 	
 
 #####################
-#Global Moran index
+#Global Moran/Geary index
 #####################
 def compute_moran(A, x):
 	z = (x - x.mean())	
 	zl = A.dot(z) 
 	return (z.shape[0] / A.sum()) * ( (z * zl).sum() ) / (z**2).sum()    
 
-def moran_data_dist(A, x, Np):
-	return np.array([ compute_moran(A, xp) for xp in data_permutations(x, Np) ])
+#geary
+#sum_ij wij (xi - xj) (xi - xj)
+#sum_ij wij (xi^2 - 2xi xj + xj^2)
+#sum_i xi^2 wij + sum_j wij xj xj - 2sum_ij xi wij xj
+def compute_geary(A, x):
+	z = (x - x.mean())	
+	x2 = x*x
+	xl = A.dot(x) 
+	x2l = A.dot(x2) 
+	x2r = A.transpose().dot(x2) 	
+	return ( (x.shape[0]-1) / A.sum() ) * (   x2l.sum() + x2r.sum() - 2*x.dot(xl) ) / (z**2).sum()    
 
-def moran_config_dist(A, x, deg_seq, Np):
+
+def global_data_dist(A, x, Np, func=compute_moran):
+	return np.array([ func(A, xp) for xp in data_permutations(x, Np) ])
+
+def global_config_dist(A, x, deg_seq, Np, func=compute_moran):
 	vals = []
 	for i in range(Np):
 		Gc = nx.configuration_model( deg_seq )
-		vals.append( compute_moran(get_adjacency(Gc), x) )
+		vals.append( func(get_adjacency(Gc), x) )
 	return vals
 	
-def moran_pval(G, A, x, null="dist", Np=1000, alt="greater", smooth=0):
-	I = compute_moran(A, x)
+def global_pval(G, A, x, null="dist", Np=1000, alt="greater", smooth=0, func=compute_moran):
+	I = func(A, x)
 	if null == "dist":
 		deg_seq = [d for n,d in G.degree]		
-		dists = moran_config_dist(A,x,deg_seq,Np)
+		dists = global_config_dist(A,x,deg_seq,Np,func)
 	elif null == "config":
-		dists = moran_data_dist(A,x,Np)
+		dists = global_data_dist(A,x,Np,func)
 	else:
 		return I
-			
+
 	return I, pval(dists, I, alt=alt, smooth=smooth), dists
 
 def moran(G, name="data", null="dist", Np=1000, alt="greater", smooth=0):
 	A = get_adjacency(G)
 	x = get_node_data(G, name=name) 
-	return moran_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
+	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
 	
+def geary(G, name="data", null="dist", Np=1000, alt="lesser", smooth=0):
+	A = get_adjacency(G)
+	x = get_node_data(G, name=name) 
+	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_geary)
 
 #####################
 ##Local Moran index
@@ -85,40 +105,77 @@ def compute_local_moran(A, x, norm=False):
 	if norm: return (z * zl) / (z**2).sum()    
 	return (z * zl)   #no real need to normalise
 
+#local geary sum_j w_ij (xi - xj)**2
+#= sum_j xi xi w_ij + wij xj xj - 2 xi wij xj
+#= xi^2 * w_i + x2r - 2x*xl
+def compute_local_geary(A, x, norm=False):
+	x2 = x*x
+	xl = A.dot(x) 
+	x2l = A.dot(x2) 
+
+	w =  x2*np.asarray( np.sum(A , axis=1) ).reshape( (-1,) )
+	
+	if norm: 
+		z = (x - x.mean())	
+		return (   x2l + w - 2*x*xl ) / (z**2).sum()    
+	return (   x2l + w - 2*x*xl )   #no real need to normalise
+
+
 def compute_local_moran_i(A, z, i):
 	return z[i] * A[i,:].dot(z)[0]
+
+def compute_local_geary_i(A, x, x2, i):
+	return  x[i]*x[i]*A[i,:].sum() + A[i,:].dot(x2)[0]  -2*x[i] * A[i,:].dot(x)[0]
 	
+		
 def conditional_random(x,i): #keep i fixed, shuffle rest
 	N = len(x)
 	idx = list(np.random.permutation( np.concatenate( (np.arange(i), np.arange(i+1,N)) ) ) ); 
 	idx.insert(i,i)
 	return x[idx]
 	
-def local_moran_data_dist(A, x, Np=100):
+def local_data_dist(A, x, Np=100, stat="moran"):
 	N = len(x)
 	dists = np.zeros( (Np,N) )
-	z = x - np.mean(x)
-	for i in range(N):
-		for j in range(Np):
-			dists[j,i] = compute_local_moran_i( A, conditional_random(z,i) , i)
+	if stat == "moran":
+		z = x - np.mean(x)
+		for i in range(N):
+			for j in range(Np):
+				dists[j,i] = compute_local_moran_i( A, conditional_random(z,i) , i)
+	elif stat == "geary":
+		for i in range(N):
+			for j in range(Np):
+				y = conditional_random(x,i)
+				y2 = y*y
+				dists[j,i] = compute_local_geary_i( A, y, y2, i)
+
 	return dists
 
-def local_moran_config_dist(A, x, deg_seq, Np=100):
+def local_config_dist(A, x, deg_seq, Np=100, stat="moran"):
 	N = len(x)
 	dists = np.zeros( (Np,N) )
 	for i in range(Np):
 		Gc = nx.configuration_model( deg_seq )
-		dists[i,:] = compute_local_moran(get_adjacency(Gc), x)
+		if stat == "moran":
+			dists[i,:] = compute_local_moran(get_adjacency(Gc), x)
+		elif stat == "geary":
+			dists[i,:] = compute_local_geary(get_adjacency(Gc), x)
+
 	return dists
 	
 	
-def local_moran_pval(G, A, x, null="dist", Np=100, alt="greater", smooth=0):
-	L = compute_local_moran(A, x)
+def local_pval(G, A, x, null="dist", Np=100, alt="greater", smooth=0, stat="moran"):
+
+	if stat == "moran":
+		L = compute_local_moran(A, x)
+	elif stat == "geary":
+		L = compute_local_geary(A, x)
+		
 	if null == "dist":
 		deg_seq = [d for n,d in G.degree]		
-		dists = local_moran_config_dist(A,x,deg_seq,Np)
+		dists = local_config_dist(A,x,deg_seq,Np,stat)
 	elif null == "config":
-		dists = local_moran_data_dist(A,x,Np)
+		dists = local_data_dist(A,x,Np,stat)
 	else:
 		return L
 		
@@ -127,8 +184,13 @@ def local_moran_pval(G, A, x, null="dist", Np=100, alt="greater", smooth=0):
 def local_moran(G, name="data", null="dist", Np=1000, alt="greater", smooth=0):
 	A = get_adjacency(G)
 	x = get_node_data(G, name=name) 
-	return local_moran_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
-	
+	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
+
+def local_geary(G, name="data", null="dist", Np=1000, alt="lesser", smooth=0):
+	A = get_adjacency(G)
+	x = get_node_data(G, name=name) 
+	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="geary")
+		
 	
 #################
 #Lee statistic
