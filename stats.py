@@ -43,7 +43,7 @@ def pval(rs, r, alt="greater", smooth=0):
 	
 
 #####################
-#Global Moran/Geary index
+#Global Moran/Geary/Getis-Ord index
 #####################
 def compute_moran(A, x):
 	z = (x - x.mean())	
@@ -61,6 +61,11 @@ def compute_geary(A, x):
 	x2l = A.dot(x2) 
 	x2r = A.transpose().dot(x2) 	
 	return ( (x.shape[0]-1) / A.sum() ) * (   x2l.sum() + x2r.sum() - 2*x.dot(xl) ) / (z**2).sum()    
+
+#general GO 
+def compute_getisord(A, x):
+	xl = A.dot(x) 
+	return  (x* xl).sum() / x.sum()**2
 
 
 def global_data_dist(A, x, Np, func=compute_moran):
@@ -95,6 +100,11 @@ def geary(G, name="data", null="dist", Np=1000, alt="lesser", smooth=0):
 	x = get_node_data(G, name=name) 
 	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_geary)
 
+def getisord(G, name="data", null="dist", Np=1000, alt="greater", smooth=0):
+	A = get_adjacency(G)
+	x = get_node_data(G, name=name) 
+	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord)
+
 #####################
 ##Local Moran index
 #####################
@@ -120,13 +130,32 @@ def compute_local_geary(A, x, norm=False):
 		return (   x2l + w - 2*x*xl ) / (z**2).sum()    
 	return (   x2l + w - 2*x*xl )   #no real need to normalise
 
+#this is Gstar
+def compute_local_getisordstar(A, x, norm = False):	
+	if norm:
+		return A.dot(x) /x.sum()
+	return A.dot(x)
+	
+#this is G[i] = sum_{i=/=j} wij xj/sum{i=/=j} xj
+# sum{i=/=j} xj = sum{j} xj - x[i]
+#sum_{i=/=j} wij xj = sum_{j} wij xj - wii xi
+def compute_local_getisord(A, x, norm=False):
+	if norm:	
+		return (A.dot(x) - A.diagonal()*x) / (np.ones(x.shape[0])*x.sum() - x)
+	return A.dot(x) - A.diagonal()*x
 
 def compute_local_moran_i(A, z, i):
 	return z[i] * A[i,:].dot(z)[0]
 
 def compute_local_geary_i(A, x, x2, i):
 	return  x[i]*x[i]*A[i,:].sum() + A[i,:].dot(x2)[0]  -2*x[i] * A[i,:].dot(x)[0]
-	
+
+def compute_local_getisordstar_i(A, x, i):
+	return  x[i] * A[i,:].dot(x)[0]
+		
+def compute_local_getisord_i(A, x, i):
+	return  x[i] * A[i,:].dot(x)[0] - A[i,i]*x[i]
+
 		
 def conditional_random(x,i): #keep i fixed, shuffle rest
 	N = len(x)
@@ -148,6 +177,14 @@ def local_data_dist(A, x, Np=100, stat="moran"):
 				y = conditional_random(x,i)
 				y2 = y*y
 				dists[j,i] = compute_local_geary_i( A, y, y2, i)
+	elif stat == "getisord":
+		for i in range(N):
+			for j in range(Np):
+				dists[j,i] = compute_local_getisord_i( A, conditional_random(x,i), i)
+	elif stat == "getisord*":
+		for i in range(N):
+			for j in range(Np):
+				dists[j,i] = compute_local_getisordstar_i( A, conditional_random(x,i), i)
 
 	return dists
 
@@ -160,6 +197,10 @@ def local_config_dist(A, x, deg_seq, Np=100, stat="moran"):
 			dists[i,:] = compute_local_moran(get_adjacency(Gc), x)
 		elif stat == "geary":
 			dists[i,:] = compute_local_geary(get_adjacency(Gc), x)
+		elif stat == "getisord":
+			dists[i,:] = compute_local_getisord(get_adjacency(Gc), x)
+		elif stat == "getisord*":
+			dists[i,:] = compute_local_getisordstar(get_adjacency(Gc), x)
 
 	return dists
 	
@@ -170,6 +211,10 @@ def local_pval(G, A, x, null="dist", Np=100, alt="greater", smooth=0, stat="mora
 		L = compute_local_moran(A, x)
 	elif stat == "geary":
 		L = compute_local_geary(A, x)
+	elif stat == "getisord":
+		L = compute_local_getisord(A, x)
+	elif stat == "getisord*":
+		L = compute_local_getisordstar(A, x)
 		
 	if null == "dist":
 		deg_seq = [d for n,d in G.degree]		
@@ -190,7 +235,14 @@ def local_geary(G, name="data", null="dist", Np=1000, alt="lesser", smooth=0):
 	A = get_adjacency(G)
 	x = get_node_data(G, name=name) 
 	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="geary")
-		
+
+def local_getisord(G, name="data", null="dist", Np=1000, alt="greater", smooth=0, star=True):
+	A = get_adjacency(G)
+	x = get_node_data(G, name=name) 
+	if star:
+		return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="getisord*")
+	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="getisord")
+			
 	
 #################
 #Lee statistic
