@@ -1,6 +1,6 @@
 import networkx as nx
 import numpy as np
-
+from scipy.sparse import csr_matrix
 ##############################################
 ##Add and extract data from NetworkX Objects##
 ##############################################
@@ -12,14 +12,21 @@ def set_node_data(G, x, name="data"):
 	nx.set_node_attributes(G, {n:x[i] for i,n in enumerate(G.nodes)}, name)
 
 
+ 
+
+#def row_normalise(A, loop=0):
+#	rowsums =  np.sum(A , axis=1) 
+#	for i in range( len(rowsums) ): A[i,:] /= (float(rowsums[i])+loop)  ##crazy slow
+#	return A	
 def row_normalise(A, loop=0):
-	rowsums =  np.sum(A , axis=1) 
-	for i in range( len(rowsums) ): A[i,:] /= (float(rowsums[i])+loop)
+	rowsums =  1./( np.asarray( np.sum(A , axis=1) ).reshape( (-1,) ) + loop )
+	D = csr_matrix( (rowsums, (np.arange(rowsums.shape[0]), np.arange(rowsums.shape[0]) ))  )
+	return D.dot(A) 
 
 
 def get_adjacency(G, rownorm = True, loop=0):
 	A = nx.adjacency_matrix(G).astype(float)			
-	if rownorm: row_normalise(A,loop)
+	if rownorm: return row_normalise(A,loop)
 	return A
 
 
@@ -68,13 +75,19 @@ def compute_getisord(A, x):
 	return  (x* xl).sum() / x.sum()**2
 
 
+
+
+
 def global_data_dist(A, x, Np, func=compute_moran):
 	return np.array([ func(A, xp) for xp in data_permutations(x, Np) ])
 
 def global_config_dist(A, x, deg_seq, Np, func=compute_moran):
 	vals = []
+			
+	
 	for i in range(Np):
 		Gc = nx.configuration_model( deg_seq )
+		#Gc = nx.expected_degree_graph( deg_seq )
 		vals.append( func(get_adjacency(Gc), x) )
 	return vals
 	
