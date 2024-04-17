@@ -30,9 +30,9 @@ for i,G in enumerate([G1,G2,G3]):
 	propagate(G, 0, num_steps=steps[i], noise=sigs[i])	
 
 
-	I, pId, Id  = moran(G, Np=100, null="dist") 
-	C, pCd, Cd  = geary(G, Np=100, null="dist") 
-	O, pOd, Od  = getisord(G, Np=100, null="dist") 
+	I, pId, Id  = moran(G, Np=100, null="data") 
+	C, pCd, Cd  = geary(G, Np=100, null="data") 
+	O, pOd, Od  = getisord(G, Np=100, null="data") 
 	
 	I, pIc, Ic  = moran(G, Np=100, null="config") 
 	C, pCc, Cc  = geary(G, Np=100, null="config") 

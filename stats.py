@@ -78,29 +78,29 @@ def global_config_dist(A, x, deg_seq, Np, func=compute_moran):
 		vals.append( func(get_adjacency(Gc), x) )
 	return vals
 	
-def global_pval(G, A, x, null="dist", Np=1000, alt="greater", smooth=0, func=compute_moran):
+def global_pval(G, A, x, null="data", Np=1000, alt="greater", smooth=0, func=compute_moran):
 	I = func(A, x)
 	if null == "config":
 		deg_seq = [d for n,d in G.degree]		
 		dists = global_config_dist(A,x,deg_seq,Np,func)
-	elif null == "dist":
+	elif null == "data":
 		dists = global_data_dist(A,x,Np,func)
 	else:
 		return I
 
 	return I, pval(dists, I, alt=alt, smooth=smooth), dists
 
-def moran(G, name="data", null="dist", Np=1000, alt="greater", smooth=0):
+def moran(G, name="data", null="data", Np=1000, alt="greater", smooth=0):
 	A = get_adjacency(G)
 	x = get_node_data(G, name=name) 
 	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
 	
-def geary(G, name="data", null="dist", Np=1000, alt="lesser", smooth=0):
+def geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0):
 	A = get_adjacency(G)
 	x = get_node_data(G, name=name) 
 	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_geary)
 
-def getisord(G, name="data", null="dist", Np=1000, alt="greater", smooth=0):
+def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0):
 	A = get_adjacency(G)
 	x = get_node_data(G, name=name) 
 	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord)
@@ -205,7 +205,7 @@ def local_config_dist(A, x, deg_seq, Np=100, stat="moran"):
 	return dists
 	
 	
-def local_pval(G, A, x, null="dist", Np=100, alt="greater", smooth=0, stat="moran"):
+def local_pval(G, A, x, null="data", Np=100, alt="greater", smooth=0, stat="moran"):
 
 	if stat == "moran":
 		L = compute_local_moran(A, x)
@@ -216,27 +216,27 @@ def local_pval(G, A, x, null="dist", Np=100, alt="greater", smooth=0, stat="mora
 	elif stat == "getisord*":
 		L = compute_local_getisordstar(A, x)
 		
-	if null == "dist":
+	if null == "config":
 		deg_seq = [d for n,d in G.degree]		
 		dists = local_config_dist(A,x,deg_seq,Np,stat)
-	elif null == "config":
+	elif null == "data":
 		dists = local_data_dist(A,x,Np,stat)
 	else:
 		return L
 		
 	return L, np.array([ pval(dists[i], L[i], alt=alt, smooth=smooth) for i in range(len(x)) ]), dists
 
-def local_moran(G, name="data", null="dist", Np=1000, alt="greater", smooth=0):
+def local_moran(G, name="data", null="data", Np=1000, alt="greater", smooth=0):
 	A = get_adjacency(G)
 	x = get_node_data(G, name=name) 
 	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
 
-def local_geary(G, name="data", null="dist", Np=1000, alt="lesser", smooth=0):
+def local_geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0):
 	A = get_adjacency(G)
 	x = get_node_data(G, name=name) 
 	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="geary")
 
-def local_getisord(G, name="data", null="dist", Np=1000, alt="greater", smooth=0, star=True):
+def local_getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, star=True):
 	A = get_adjacency(G)
 	x = get_node_data(G, name=name) 
 	if star:

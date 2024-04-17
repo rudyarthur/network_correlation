@@ -28,7 +28,7 @@ propagate(G, source_id, num_steps=10, noise=0.1)
 	
 Np=100
 
-for mi, null in enumerate(["dist", "config"]):
+for mi, null in enumerate(["data", "config"]):
 	
 	#Moran
 	L, pvals, dists = local_moran(G,null=null,Np=Np)
