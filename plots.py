@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
-from stats import get_node_data, get_adjacency
+from stats import get_node_data, set_node_data, get_adjacency
 from scipy.stats import linregress
 
 def draw_network_data(G, ax, name="data", colorbar=False, draw_labels=False):
@@ -76,4 +76,36 @@ def moran_scatterplot(G, ax, mean_subtract=False):
 
 				
 	return quadrants	
+	
+def correlogram(G, func, dmin=1, dmax=None):
+	paths = nx.shortest_path(G)
+
+	if not dmax:
+		##figure out max path length
+		smax = max( paths.items(), key = lambda s: len(max(s[1].items(), key= lambda d:d[1])[1]) )[0]
+		dmax = len( max(paths[smax].items(), key= lambda t:t[1])[1] )
+
+	corr = []
+	for d in range(dmin,dmax+1):
+		Gd = nx.Graph() 
+		Gd.add_nodes_from( G.nodes )
+		set_node_data( Gd, get_node_data(G) )
+	
+		for source, path in paths.items():
+			for dest,p in path.items():
+				if source == dest: continue
+
+				if len(p) == d+1:
+					Gd.add_edge( source, dest )
+		
+
+		corr.append( func(Gd, null=None) )
+	return list(range(dmin,dmax+1)), corr
+
+
+
+
+
+	
+	
 	
