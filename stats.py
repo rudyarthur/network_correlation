@@ -80,10 +80,10 @@ def global_config_dist(A, x, deg_seq, Np, func=compute_moran):
 	
 def global_pval(G, A, x, null="dist", Np=1000, alt="greater", smooth=0, func=compute_moran):
 	I = func(A, x)
-	if null == "dist":
+	if null == "config":
 		deg_seq = [d for n,d in G.degree]		
 		dists = global_config_dist(A,x,deg_seq,Np,func)
-	elif null == "config":
+	elif null == "dist":
 		dists = global_data_dist(A,x,Np,func)
 	else:
 		return I
