@@ -57,6 +57,8 @@ def compute_moran(A, x):
 	zl = A.dot(z) 
 	return (z.shape[0] / A.sum()) * ( (z * zl).sum() ) / (z**2).sum()    
 
+#def compute_moran(G): return compute_moran( get_adjacency(G), get_node_data(G) )
+	
 #geary
 #sum_ij wij (xi - xj) (xi - xj)
 #sum_ij wij (xi^2 - 2xi xj + xj^2)
@@ -67,13 +69,17 @@ def compute_geary(A, x):
 	xl = A.dot(x) 
 	x2l = A.dot(x2) 
 	x2r = A.transpose().dot(x2) 	
-	return ( (x.shape[0]-1) / A.sum() ) * (   x2l.sum() + x2r.sum() - 2*x.dot(xl) ) / (z**2).sum()    
+	return ( (x.shape[0]-1) / (2*A.sum()) ) * (   x2l.sum() + x2r.sum() - 2*x.dot(xl) ) / (z**2).sum()    
 
+#def compute_geary(G): return compute_geary( get_adjacency(G), get_node_data(G) )
+	
 #general GO 
 def compute_getisord(A, x):
 	xl = A.dot(x) 
 	return  (x* xl).sum() / x.sum()**2
 
+#def compute_getisord(G): return compute_getisord( get_adjacency(G), get_node_data(G) )
+	
 
 
 
