@@ -14,7 +14,10 @@ def propagate(G, source_id, source_val=1, start_val = 0, num_steps=10, clean_sta
 		for n in G.nodes: G.nodes[n][name] = start_val
 		G.nodes[source_id][name] = source_val	
 	for i in range(num_steps):
-		nv = { n:np.mean( [ G.nodes[k][name] for k in G.neighbors(n) ] ) for n in G.nodes }
+		if G.is_directed():
+			nv = { n:np.mean( [ G.nodes[k][name] for k in G.predecessors(n) ] ) for n in G.nodes if len( list(G.predecessors(n)) )  }
+		else:
+			nv = { n:np.mean( [ G.nodes[k][name] for k in G.neighbors(n) ] ) for n in G.nodes }
 		nv[source_id] = source_val
 		nx.set_node_attributes(G, nv, name)
 

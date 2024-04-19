@@ -19,7 +19,10 @@ def set_node_data(G, x, name="data"):
 #	for i in range( len(rowsums) ): A[i,:] /= (float(rowsums[i])+loop)  ##crazy slow
 #	return A	
 def row_normalise(A, loop=0):
-	rowsums =  1./( np.asarray( np.sum(A , axis=1) ).reshape( (-1,) ) + loop )
+	rowsums =  np.asarray( np.sum(A , axis=1) ).reshape( (-1,) ) + loop
+	rowsums[ rowsums == 0 ] = 1 #zero rows stay zero rows
+	rowsums = 1/rowsums
+	
 	D = csr_matrix( (rowsums, (np.arange(rowsums.shape[0]), np.arange(rowsums.shape[0]) ))  )
 	return D.dot(A) 
 
@@ -28,6 +31,7 @@ def get_adjacency(G, rownorm = True, loop=0):
 	A = nx.adjacency_matrix(G).astype(float)			
 	if rownorm: return row_normalise(A,loop)
 	return A
+
 
 
 ##############################################
@@ -87,21 +91,30 @@ def compute_getisord(A, x):
 def global_data_dist(A, x, Np, func=compute_moran):
 	return np.array([ func(A, xp) for xp in data_permutations(x, Np) ])
 
-def global_config_dist(A, x, deg_seq, Np, func=compute_moran):
+def global_config_dist(G, A, x, Np, func=compute_moran):
 	vals = []
-			
+
+	if G.is_directed():
+		in_deg_seq = [d for n,d in G.in_degree]		
+		out_deg_seq = [d for n,d in G.out_degree]		
+		for i in range(Np):
+			Gc = nx.directed_configuration_model( in_deg_seq , out_deg_seq )
+			vals.append( func(get_adjacency(Gc), x) )
+
+	else:
+		deg_seq = [d for n,d in G.degree]		
+		for i in range(Np):
+			Gc = nx.configuration_model( deg_seq )
+			vals.append( func(get_adjacency(Gc), x) )
+
 	
-	for i in range(Np):
-		Gc = nx.configuration_model( deg_seq )
-		#Gc = nx.expected_degree_graph( deg_seq )
-		vals.append( func(get_adjacency(Gc), x) )
+			
 	return vals
 	
 def global_pval(G, A, x, null="data", Np=1000, alt="greater", smooth=0, func=compute_moran):
 	I = func(A, x)
 	if null == "config":
-		deg_seq = [d for n,d in G.degree]		
-		dists = global_config_dist(A,x,deg_seq,Np,func)
+		dists = global_config_dist(G,A,x,Np,func)
 	elif null == "data":
 		dists = global_data_dist(A,x,Np,func)
 	else:
@@ -109,18 +122,18 @@ def global_pval(G, A, x, null="data", Np=1000, alt="greater", smooth=0, func=com
 
 	return I, pval(dists, I, alt=alt, smooth=smooth), dists
 
-def moran(G, name="data", null="data", Np=1000, alt="greater", smooth=0):
-	A = get_adjacency(G)
+def moran(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True):
+	A = get_adjacency(G, rownorm)
 	x = get_node_data(G, name=name) 
 	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
 	
-def geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0):
-	A = get_adjacency(G)
+def geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0, rownorm=True):
+	A = get_adjacency(G, rownorm)
 	x = get_node_data(G, name=name) 
 	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_geary)
 
-def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0):
-	A = get_adjacency(G)
+def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True):
+	A = get_adjacency(G, rownorm)
 	x = get_node_data(G, name=name) 
 	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord)
 
@@ -207,11 +220,24 @@ def local_data_dist(A, x, Np=100, stat="moran"):
 
 	return dists
 
-def local_config_dist(A, x, deg_seq, Np=100, stat="moran"):
+def local_config_dist(G, A, x, Np=100, stat="moran"):
 	N = len(x)
 	dists = np.zeros( (Np,N) )
+	
+	if G.is_directed():
+		in_deg_seq = [d for n,d in G.in_degree]		
+		out_deg_seq = [d for n,d in G.out_degree]		
+	else:
+		deg_seq = [d for n,d in G.degree]		
+
+
+
 	for i in range(Np):
-		Gc = nx.configuration_model( deg_seq )
+		if G.is_directed():
+			Gc = nx.directed_configuration_model( in_deg_seq , out_deg_seq )
+		else:
+			Gc = nx.configuration_model( deg_seq )
+			
 		if stat == "moran":
 			dists[i,:] = compute_local_moran(get_adjacency(Gc), x)
 		elif stat == "geary":
@@ -236,8 +262,7 @@ def local_pval(G, A, x, null="data", Np=100, alt="greater", smooth=0, stat="mora
 		L = compute_local_getisordstar(A, x)
 		
 	if null == "config":
-		deg_seq = [d for n,d in G.degree]		
-		dists = local_config_dist(A,x,deg_seq,Np,stat)
+		dists = local_config_dist(G,A,x,Np,stat)
 	elif null == "data":
 		dists = local_data_dist(A,x,Np,stat)
 	else:
@@ -274,10 +299,10 @@ def compute_lee(A,x,y,loop=None):
 	zly = A.dot(zy) 
 		
 	if loop is not None:
-		rowsums =  np.asarray( np.sum(A , axis=1) ).reshape( (-1,) )
-		zlx = (zlx + loop*zx)/(rowsums+loop)
-		zly = (zly + loop*zy)/(rowsums+loop)	
-		W = np.sum( np.sum(A, axis=1).reshape(rowsums.shape)/(rowsums+loop) ) 
+		rowsums =  np.asarray( np.sum(A , axis=1) ).reshape( (-1,) ) + loop
+		zlx = (zlx + loop*zx)/(rowsums)
+		zly = (zly + loop*zy)/(rowsums)	
+		W = np.sum( np.sum(A, axis=1).reshape(rowsums.shape)/(rowsums) ) 
 	else:
 		W = np.sum( np.sum(A, axis=0) ) 
 
@@ -295,11 +320,20 @@ def lee_pval(G, A, x, y, null="data", Np=100, alt="greater", smooth=0):
 			for yp in ydist:
 				rs.append( compute_lee(A, xp,yp) )		
 	else:
-		deg_seq = [d for n,d in G.degree]		
-		for i in range(Np):
-			Gc = nx.configuration_model( deg_seq )
-			rs.append(  compute_lee(get_adjacency(Gc), x, y) )
-	
+		if G.is_directed():
+			in_deg_seq = [d for n,d in G.in_degree]		
+			out_deg_seq = [d for n,d in G.out_degree]		
+			for i in range(Np):
+				Gc = nx.directed_configuration_model( in_deg_seq , out_deg_seq )
+				rs.append(  compute_lee(get_adjacency(Gc), x, y) )
+
+		else:
+			deg_seq = [d for n,d in G.degree]		
+			for i in range(Np):
+				Gc = nx.configuration_model( deg_seq )
+				rs.append(  compute_lee(get_adjacency(Gc), x, y) )
+
+
 	return r, pval(rs, r, alt=alt, smooth=smooth), rs
 
 def lee(G, xname, yname, null="data", Np=100, alt="greater", smooth=0):
