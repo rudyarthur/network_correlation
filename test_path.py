@@ -10,6 +10,9 @@ from plots import *
 import time
 import sys
 
+
+
+
 matplotlib.rcParams.update({'font.size': 22})
 
 np.random.seed(123456789)	
@@ -25,9 +28,15 @@ N = len(G.nodes)
 
 propagate(G, 0, num_steps=50, noise=0.1)	
 
-##moran correlogram, but can swap with geary or getisord
-dist, moran_corr = correlogram(G, moran)
-ax[0].bar(dist, moran_corr)
+##correlogram
+distance, moran_corr = moran_correlogram(G, moran)
+
+sig=0.01
+ax[0].plot(distance, [m[0] for m in moran_corr], c="C0", ls='--')
+ax[0].scatter([d for i,d in enumerate(distance) if moran_corr[i][1] <= sig], [m[0] for m in moran_corr if m[1] <= sig], c="C0", s=120)
+ax[0].scatter([d for i,d in enumerate(distance) if moran_corr[i][1] > sig], [m[0] for m in moran_corr if m[1] > sig], s=120, edgecolor="C0", facecolor="None")
+
+	
 
 draw_network_data(G, ax[1], colorbar=False)
 

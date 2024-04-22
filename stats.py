@@ -43,7 +43,7 @@ def data_permutations(x, Np):
 
 
 #Compute the p-value of r given an estimate of the distribution rs = [ estimate1, estimate2, ... ]	
-#Frequently we use 999 samples and +1 smoothing factor	
+#Sometimes 999 samples and +1 smoothing factor	
 def pval(rs, r, alt="greater", smooth=0):
 
 	m=1
@@ -111,7 +111,7 @@ def global_config_dist(G, A, x, Np, func=compute_moran):
 			
 	return vals
 	
-def global_pval(G, A, x, null="data", Np=1000, alt="greater", smooth=0, func=compute_moran):
+def global_pval(G, A, x, null="data", Np=1000, alt="greater", smooth=0, func=compute_moran, return_dists=True):
 	I = func(A, x)
 	if null == "config":
 		dists = global_config_dist(G,A,x,Np,func)
@@ -120,22 +120,24 @@ def global_pval(G, A, x, null="data", Np=1000, alt="greater", smooth=0, func=com
 	else:
 		return I
 
-	return I, pval(dists, I, alt=alt, smooth=smooth), dists
+	if return_dists:
+		return I, pval(dists, I, alt=alt, smooth=smooth), dists
+	return I, pval(dists, I, alt=alt, smooth=smooth)
 
-def moran(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True):
+def moran(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True):
 	A = get_adjacency(G, rownorm)
 	x = get_node_data(G, name=name) 
-	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
+	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, return_dists=return_dists)
 	
-def geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0, rownorm=True):
+def geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0, rownorm=True, return_dists=True):
 	A = get_adjacency(G, rownorm)
 	x = get_node_data(G, name=name) 
-	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_geary)
+	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_geary, return_dists=return_dists)
 
-def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True):
+def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True):
 	A = get_adjacency(G, rownorm)
 	x = get_node_data(G, name=name) 
-	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord)
+	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord, return_dists=return_dists)
 
 #####################
 ##Local Moran index

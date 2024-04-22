@@ -77,7 +77,8 @@ def moran_scatterplot(G, ax, mean_subtract=False):
 				
 	return quadrants	
 	
-def correlogram(G, func, dmin=1, dmax=None):
+#TODO: return pvals	
+def xogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
 	paths = nx.shortest_path(G)
 
 	if not dmax:
@@ -99,9 +100,30 @@ def correlogram(G, func, dmin=1, dmax=None):
 					Gd.add_edge( source, dest )
 		
 
-		corr.append( func(Gd, null=None) )
+		corr.append( func(Gd, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm, return_dists=False) )
 	return list(range(dmin,dmax+1)), corr
 
+from stats import moran
+def moran_correlogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data",  smooth=0, rownorm=True):
+	return  xogram(G, moran, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
+
+from stats import geary
+def geary_correlogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
+	return  xogram(G, geary, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
+
+from stats import getisord
+def getisord_correlogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
+	return  xogram(G, getisord, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
+
+
+def variogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
+	x = get_node_data(G)
+	z = (x - np.mean(x))
+	unnorm = (z**2).sum() / (x.shape[0]-1)
+	def unnorm_geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0, rownorm=True):
+		return geary(G, name, null, Np, alt, smooth, rownorm) * unnorm
+	
+	return  xogram(G, unnorm_geary, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
 
 
 
