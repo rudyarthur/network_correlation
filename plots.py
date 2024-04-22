@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
-from stats import get_node_data, set_node_data, get_adjacency
+from stats import get_node_data, set_node_data, copy_node_data, get_adjacency
 from scipy.stats import linregress
 
 def draw_network_data(G, ax, name="data", colorbar=False, draw_labels=False):
@@ -10,7 +10,7 @@ def draw_network_data(G, ax, name="data", colorbar=False, draw_labels=False):
 
 	pos = nx.spring_layout(G, seed=123456789)
 	ec = nx.draw_networkx_edges(G, pos, ax=ax, alpha=0.1)
-	nc = nx.draw_networkx_nodes(G, pos, ax=ax, node_size=100, nodelist=nodes, node_color = colors, vmin = min(0,np.min(colors)), vmax = 1, cmap="rainbow", edgecolors=None)
+	nc = nx.draw_networkx_nodes(G, pos, ax=ax, node_size=100, nodelist=nodes, node_color = colors, vmin = min(0,np.min(colors)), vmax = max(1,np.max(colors)), cmap="rainbow", edgecolors=None)
 
 	if draw_labels: 
 		if type(draw_labels) == bool:
@@ -90,8 +90,9 @@ def xogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth
 	for d in range(dmin,dmax+1):
 		Gd = nx.Graph() 
 		Gd.add_nodes_from( G.nodes )
-		set_node_data( Gd, get_node_data(G) )
-	
+		#set_node_data( Gd, get_node_data(G) )
+		copy_node_data( G, Gd )
+		
 		for source, path in paths.items():
 			for dest,p in path.items():
 				if source == dest: continue
@@ -104,26 +105,38 @@ def xogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth
 	return list(range(dmin,dmax+1)), corr
 
 from stats import moran
-def moran_correlogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data",  smooth=0, rownorm=True):
+def moran_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data",  smooth=0, rownorm=True):
 	return  xogram(G, moran, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
 
 from stats import geary
-def geary_correlogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
+def geary_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
 	return  xogram(G, geary, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
 
 from stats import getisord
-def getisord_correlogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
+def getisord_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
 	return  xogram(G, getisord, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
 
 
-def variogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
+def variogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
 	x = get_node_data(G)
 	z = (x - np.mean(x))
 	unnorm = (z**2).sum() / (x.shape[0]-1)
-	def unnorm_geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0, rownorm=True):
-		return geary(G, name, null, Np, alt, smooth, rownorm) * unnorm
-	
+	def unnorm_geary(G, name=name, null=null, Np=Np, smooth=smooth, alt="lesser", rownorm=rownorm, return_dists=False):
+		if null is None:
+			geary(G, name, null, Np, alt, smooth, rownorm) * unnorm
+		C, p = geary(G, name=name, null=null, Np=Np, alt=alt, smooth=smooth, rownorm=rownorm, return_dists=return_dists) 
+		return C*unnorm, p 
+		
 	return  xogram(G, unnorm_geary, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
+
+from stats import crossvar
+def crossvariogram(G, name1, name2, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
+
+
+	def crossvar_fix(G, null="data", Np=1000, alt="greater", smooth=0, return_dists=True, name=None, rownorm=False):
+		return crossvar(G, name1, name2, null=null, Np=Np, alt=alt, smooth=smooth, return_dists=False)
+
+	return  xogram(G, crossvar_fix, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
 
 
 

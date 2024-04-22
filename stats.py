@@ -1,6 +1,9 @@
 import networkx as nx
 import numpy as np
 from scipy.sparse import csr_matrix
+
+##TODO - assortativity, cross variogram
+
 ##############################################
 ##Add and extract data from NetworkX Objects##
 ##############################################
@@ -11,8 +14,36 @@ def get_node_data(G, name="data"):
 def set_node_data(G, x, name="data"):
 	nx.set_node_attributes(G, {n:x[i] for i,n in enumerate(G.nodes)}, name)
 
+def copy_node_data(Gsource, Gtarget):
+	for k in Gsource.nodes[0]:
+		if k != "community":
+			set_node_data( Gtarget, get_node_data(Gsource, name=k), name=k )
+
+def bin_node_data(G, bins, binval="midpt", name="data"):
+	x = get_node_data(G,name=name)
+	inds = np.digitize(x, bins)
+
+	if binval == "left":	
+		for i in range(1,len(bins)):	
+			x[inds == i] = bins[i-1]
+	elif binval == "right":
+		for i in range(1,len(bins)):	
+			x[inds == i] = bins[i]
+	elif binval == "midpt":
+		for i in range(1,len(bins)):	
+			x[inds == i] = 0.5*(bins[i-1] + bins[i]) 
+			
+	set_node_data(G, x, name=name)
 
  
+def node_data_astype(G, t, name="data"):
+	x = get_node_data(G,name=name).astype(t)
+	set_node_data(G, x, name=name)
+
+def scale_node_data(G, s, name="data"):
+	x = get_node_data(G,name=name) * s
+	set_node_data(G, x, name=name)
+
 
 #def row_normalise(A, loop=0):
 #	rowsums =  np.sum(A , axis=1) 
@@ -27,8 +58,9 @@ def row_normalise(A, loop=0):
 	return D.dot(A) 
 
 
-def get_adjacency(G, rownorm = True, loop=0):
-	A = nx.adjacency_matrix(G).astype(float)			
+def get_adjacency(G, rownorm = True, loop=0, drop_weights=False):
+	A = nx.adjacency_matrix(G).astype(float)	
+	if drop_weights: A[A > 0] = 1
 	if rownorm: return row_normalise(A,loop)
 	return A
 
@@ -81,11 +113,34 @@ def compute_geary(A, x):
 def compute_getisord(A, x):
 	xl = A.dot(x) 
 	return  (x* xl).sum() / x.sum()**2
-
+	
 #def compute_getisord(G): return compute_getisord( get_adjacency(G), get_node_data(G) )
 	
+	
+def compute_joincount(A, x):
+	N = x.shape[0]//2 #bundled two vectors together to respect calling conventions
+	xr = x[:N]
+	xl = A.dot(x[N:]) 
+	return  (xr * xl).sum() 
 
 
+#sum_{hi | dhi = d} (x_h - x_i)(y_h - y_i)
+#sum_{hi} w_{hi} (x_h - x_i)(y_h - y_i)
+#sum_hi xh whi yh + sum_hi w_hi xi xi - sum_ih xi whi yh - sum_hi yi whi xh
+#
+def compute_crossvar(A, x):
+	N = x.shape[0]//2 #bundled two vectors together to respect calling conventions
+
+	a = x[:N]
+	b = x[N:]
+
+	ab = a*b
+
+	al = A.dot(a) 
+	bl = A.dot(b) 
+	abl = A.dot(ab) 
+	abr = A.transpose().dot(ab) 	
+	return ( 1 / (2*A.sum()) ) * (   abl.sum() + abr.sum() - a.dot(bl) - b.dot(al) )   
 
 
 def global_data_dist(A, x, Np, func=compute_moran):
@@ -138,6 +193,29 @@ def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rown
 	A = get_adjacency(G, rownorm)
 	x = get_node_data(G, name=name) 
 	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord, return_dists=return_dists)
+
+def joincount(G, r, s, name="data", null="data", Np=1000, alt="greater", smooth=0, return_dists=True):
+	A = get_adjacency(G, rownorm=False, drop_weights=True)
+	x = get_node_data(G, name=name) 
+	xr = np.where( x==r, 1, 0)
+	xs = np.where( x==s, 1, 0)
+	y = np.concatenate( (xr,xs) )
+	if r == s: y // 2
+
+	return global_pval(G, A, y, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_joincount, return_dists=return_dists)
+
+
+##TODO, fix?
+#def crossvar(G, name1, name2, null="data", Np=1000, alt="greater", smooth=0, return_dists=True):
+#	A = get_adjacency(G, rownorm=False, drop_weights=True)
+#	a = get_node_data(G, name=name1) 
+#	b = get_node_data(G, name=name2) 
+#
+#	y = np.concatenate( (a,b) )
+#	if name1 == name2: y // 2
+#
+#	return global_pval(G, A, y, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_crossvar, return_dists=return_dists)
+
 
 #####################
 ##Local Moran index
