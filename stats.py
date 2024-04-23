@@ -2,7 +2,6 @@ import networkx as nx
 import numpy as np
 from scipy.sparse import csr_matrix
 
-##TODO - assortativity, cross variogram
 
 ##############################################
 ##Add and extract data from NetworkX Objects##
@@ -88,6 +87,31 @@ def pval(rs, r, alt="greater", smooth=0):
 #####################
 #Global Moran/Geary/Getis-Ord index
 #####################
+
+##Don't use networkx version becuase it's VERY inefficient
+#sum_ij xi xj A_ij - sum_ij xi xj \sum_k w_ik \sum_l w_lj
+#sum(x.Ax) 
+#sum_i xi sum_k wik = sum_ik xi wik = sum_k (xA) 
+#sum(x.Ax) - (sum(xA) * sum(Ax))
+#ai = sum_j w_ij
+#sum_i xi xi sum_j w_ij - (sum_ij xi w_ij)^2
+#sum_i xi xi sum_j w_ij - (sum_ij xi w_ij)^2
+#sum_j (x2A) - (sum_j xA)^2
+#this is almost... the same as moran index!
+def compute_assortativity(A,x):
+	W = A.sum()
+
+	x2 = x*x
+	xl = A.dot(x) 
+	x2l = A.dot(x2) 
+	xr = A.transpose().dot(x) 	
+	x2r = A.transpose().dot(x2) 	
+	num = ((x*xl).sum()/W - (xl.sum()/W)*(xr.sum()/W)) 
+	den = np.sqrt( (x2l.sum()/W - (xl.sum()/W)**2) * (x2r.sum()/W - (xr.sum()/W)**2) ) 
+	
+	return num/den
+	
+	
 def compute_moran(A, x):
 	z = (x - x.mean())	
 	zl = A.dot(z) 
@@ -193,6 +217,12 @@ def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rown
 	A = get_adjacency(G, rownorm)
 	x = get_node_data(G, name=name) 
 	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord, return_dists=return_dists)
+
+def assortativity(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True):
+	A = get_adjacency(G, rownorm)
+	x = get_node_data(G, name=name) 
+	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_assortativity, return_dists=return_dists)
+
 
 def joincount(G, r, s, name="data", null="data", Np=1000, alt="greater", smooth=0, return_dists=True):
 	A = get_adjacency(G, rownorm=False, drop_weights=True)
