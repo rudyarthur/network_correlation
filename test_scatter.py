@@ -18,7 +18,6 @@ fig = plt.figure(figsize=(8, 8))
 gs = fig.add_gridspec(5, 5,  width_ratios=(1,0.5,0.5,0.5,1), height_ratios=(1,0.5,0.5,0.5,1), left=0.1, right=0.9, bottom=0.1, top=0.9,wspace=0.05, hspace=0.05)
 
 G = nx.karate_club_graph(); 
-#G = nx.LFR_benchmark_graph(100, 2.1, 1.5, 0.05, average_degree=10, max_degree=30, min_community=20, seed=123456789)
 
 G.remove_edges_from(nx.selfloop_edges(G))
 N = len(G.nodes)

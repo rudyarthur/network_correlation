@@ -22,12 +22,12 @@ def draw_network_data(G, ax, name="data", colorbar=False, draw_labels=False):
 			
 	if colorbar: plt.colorbar(nc, ax=ax)
 	ax.axis('off')
-	
-def moran_scatterplot(G, ax, mean_subtract=False):
+
+def moran_scatterplot(G, ax, name="data", mean_subtract=False, rownorm=True, drop_weights=False):
 
 
-	A = get_adjacency(G)
-	x = get_node_data(G)
+	A = get_adjacency(G, rownorm, drop_weights)
+	x = get_node_data(G, name)
 
 	if mean_subtract: 
 		z = x - np.mean(x)
@@ -76,9 +76,9 @@ def moran_scatterplot(G, ax, mean_subtract=False):
 
 				
 	return quadrants	
-	
-#TODO: return pvals	
-def xogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
+
+
+def xogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True, drop_weights=False):
 	paths = nx.shortest_path(G)
 
 	if not dmax:
@@ -88,9 +88,12 @@ def xogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth
 
 	corr = []
 	for d in range(dmin,dmax+1):
-		Gd = nx.Graph() 
+		if G.is_directed():
+			Gd = nx.DiGraph() 
+		else:
+			Gd = nx.Graph() 
 		Gd.add_nodes_from( G.nodes )
-		#set_node_data( Gd, get_node_data(G) )
+
 		copy_node_data( G, Gd )
 		
 		for source, path in paths.items():
@@ -101,44 +104,51 @@ def xogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth
 					Gd.add_edge( source, dest )
 		
 
-		corr.append( func(Gd, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm, return_dists=False) )
+		corr.append( func(Gd, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm, return_dists=False, drop_weights=drop_weights) )
 	return list(range(dmin,dmax+1)), corr
 
 from stats import moran
-def moran_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data",  smooth=0, rownorm=True):
-	return  xogram(G, moran, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
+def moran_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data",  smooth=0, rownorm=True, drop_weights=True):
+	return  xogram(G, moran, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm, drop_weights=drop_weights)
 
 from stats import geary
-def geary_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
-	return  xogram(G, geary, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
+def geary_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True, drop_weights=True):
+	return  xogram(G, geary, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm, drop_weights=drop_weights)
 
 from stats import getisord
-def getisord_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
-	return  xogram(G, getisord, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
+def getisord_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True, drop_weights=True):
+	return  xogram(G, getisord, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm, drop_weights=drop_weights)
 
 
-def variogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
-	x = get_node_data(G)
+def variogram(G, dmin=1, dmax=None, null="data", Np=100, name="data", smooth=0):
+	x = get_node_data(G, name=name)
 	z = (x - np.mean(x))
 	unnorm = (z**2).sum() / (x.shape[0]-1)
-	def unnorm_geary(G, name=name, null=null, Np=Np, smooth=smooth, alt="lesser", rownorm=rownorm, return_dists=False):
+
+	def unnorm_geary(G, name=name, null=null, Np=Np, smooth=smooth, alt="lesser", rownorm=False, return_dists=False, drop_weights=True):
 		if null is None:
-			geary(G, name, null, Np, alt, smooth, rownorm) * unnorm
-		C, p = geary(G, name=name, null=null, Np=Np, alt=alt, smooth=smooth, rownorm=rownorm, return_dists=return_dists) 
+			return geary(G, name=name, null=null, Np=Np, alt=alt, smooth=smooth, rownorm=False, return_dists=return_dists, drop_weights=True) * unnorm
+		
+		C, p = geary(G, name=name, null=null, Np=Np, alt=alt, smooth=smooth, rownorm=False, return_dists=return_dists, drop_weights=True) 
 		return C*unnorm, p 
 		
-	return  xogram(G, unnorm_geary, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
+	return  xogram(G, unnorm_geary, Np=Np, name=name, null=null, smooth=smooth, rownorm=False)
+
+from stats import lee
+def lee_correlogram(G, xname, yname, dmin=1, dmax=None, null="data", Np=100, name="data", smooth=0, rownorm=True, drop_weights=False):
+
+	def lee_fix(G, name, null=null, Np=Np, alt="greater", smooth=smooth, rownorm=rownorm, return_dists=False, drop_weights=drop_weights):
+		return lee(G, name, yname, null=null, Np=Np, alt=alt, smooth=smooth, rownorm=rownorm, return_dists=False, drop_weights=drop_weights)
+
+	return  xogram(G, lee_fix, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
 
 from stats import crossvar
-def crossvariogram(G, name1, name2, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True):
+def crossvar_correlogram(G, xname, yname, dmin=1, dmax=None, null="data", Np=100, name="data", smooth=0, rownorm=True, drop_weights=False):
 
-
-	def crossvar_fix(G, null="data", Np=1000, alt="greater", smooth=0, return_dists=True, name=None, rownorm=False):
-		return crossvar(G, name1, name2, null=null, Np=Np, alt=alt, smooth=smooth, return_dists=False)
+	def crossvar_fix(G, name, null=null, Np=Np, alt="greater", smooth=smooth, rownorm=rownorm, return_dists=False, drop_weights=drop_weights):
+		return crossvar(G, name, yname, null=null, Np=Np, alt=alt, smooth=smooth, rownorm=rownorm, return_dists=False, drop_weights=drop_weights)
 
 	return  xogram(G, crossvar_fix, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm)
-
-
 
 
 	

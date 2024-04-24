@@ -1,11 +1,11 @@
 import networkx as nx
 import numpy as np
 from scipy.sparse import csr_matrix
+import itertools
 
-
-##############################################
-##Add and extract data from NetworkX Objects##
-##############################################
+######################################################
+##Add, extract and modify data from NetworkX objects##
+######################################################
 
 def get_node_data(G, name="data"):
 	return np.array( [ G.nodes[k][name] for k in G.nodes ] )
@@ -44,10 +44,6 @@ def scale_node_data(G, s, name="data"):
 	set_node_data(G, x, name=name)
 
 
-#def row_normalise(A, loop=0):
-#	rowsums =  np.sum(A , axis=1) 
-#	for i in range( len(rowsums) ): A[i,:] /= (float(rowsums[i])+loop)  ##crazy slow
-#	return A	
 def row_normalise(A, loop=0):
 	rowsums =  np.asarray( np.sum(A , axis=1) ).reshape( (-1,) ) + loop
 	rowsums[ rowsums == 0 ] = 1 #zero rows stay zero rows
@@ -57,7 +53,7 @@ def row_normalise(A, loop=0):
 	return D.dot(A) 
 
 
-def get_adjacency(G, rownorm = True, loop=0, drop_weights=False):
+def get_adjacency(G, rownorm = True, loop=0, drop_weights=True):
 	A = nx.adjacency_matrix(G).astype(float)	
 	if drop_weights: A[A > 0] = 1
 	if rownorm: return row_normalise(A,loop)
@@ -66,11 +62,11 @@ def get_adjacency(G, rownorm = True, loop=0, drop_weights=False):
 
 
 ##############################################
-## Permutation tests
+## Global Permutation tests
 ##############################################
-	
 def data_permutations(x, Np):
-	return [ np.random.permutation(x) for _ in range(Np) ]
+	for _ in range(Np):
+			yield np.random.permutation(x)
 
 
 #Compute the p-value of r given an estimate of the distribution rs = [ estimate1, estimate2, ... ]	
@@ -82,95 +78,15 @@ def pval(rs, r, alt="greater", smooth=0):
 	larger = (m*np.array(rs) >= m*r).sum()
 	if alt == "two-tailed" and (len(rs) - larger) < larger: larger = len(rs) - larger
 	return (larger + smooth) / (len(rs) + smooth)
-	
 
-#####################
-#Global Moran/Geary/Getis-Ord index
-#####################
+##has to work for function signatures func(A, x), func(A, x, y), ...
+def global_data_dist(A, x, Np, func):	
 
-##Don't use networkx version becuase it's VERY inefficient
-#sum_ij xi xj A_ij - sum_ij xi xj \sum_k w_ik \sum_l w_lj
-#sum(x.Ax) 
-#sum_i xi sum_k wik = sum_ik xi wik = sum_k (xA) 
-#sum(x.Ax) - (sum(xA) * sum(Ax))
-#ai = sum_j w_ij
-#sum_i xi xi sum_j w_ij - (sum_ij xi w_ij)^2
-#sum_i xi xi sum_j w_ij - (sum_ij xi w_ij)^2
-#sum_j (x2A) - (sum_j xA)^2
-#this is almost... the same as moran index!
-def compute_assortativity(A,x):
-	W = A.sum()
+	perms = [ data_permutations(d,Np) for d in x ]
+	return np.array([ func(A, *dp) for dp in itertools.product( *perms ) ])
+	#return np.array([ func(A, xp) for xp in data_permutations(x, Np) ])
 
-	x2 = x*x
-	xl = A.dot(x) 
-	x2l = A.dot(x2) 
-	xr = A.transpose().dot(x) 	
-	x2r = A.transpose().dot(x2) 	
-	num = ((x*xl).sum()/W - (xl.sum()/W)*(xr.sum()/W)) 
-	den = np.sqrt( (x2l.sum()/W - (xl.sum()/W)**2) * (x2r.sum()/W - (xr.sum()/W)**2) ) 
-	
-	return num/den
-	
-	
-def compute_moran(A, x):
-	z = (x - x.mean())	
-	zl = A.dot(z) 
-	return (z.shape[0] / A.sum()) * ( (z * zl).sum() ) / (z**2).sum()    
-
-#def compute_moran(G): return compute_moran( get_adjacency(G), get_node_data(G) )
-	
-#geary
-#sum_ij wij (xi - xj) (xi - xj)
-#sum_ij wij (xi^2 - 2xi xj + xj^2)
-#sum_i xi^2 wij + sum_j wij xj xj - 2sum_ij xi wij xj
-def compute_geary(A, x):
-	z = (x - x.mean())	
-	x2 = x*x
-	xl = A.dot(x) 
-	x2l = A.dot(x2) 
-	x2r = A.transpose().dot(x2) 	
-	return ( (x.shape[0]-1) / (2*A.sum()) ) * (   x2l.sum() + x2r.sum() - 2*x.dot(xl) ) / (z**2).sum()    
-
-#def compute_geary(G): return compute_geary( get_adjacency(G), get_node_data(G) )
-	
-#general GO 
-def compute_getisord(A, x):
-	xl = A.dot(x) 
-	return  (x* xl).sum() / x.sum()**2
-	
-#def compute_getisord(G): return compute_getisord( get_adjacency(G), get_node_data(G) )
-	
-	
-def compute_joincount(A, x):
-	N = x.shape[0]//2 #bundled two vectors together to respect calling conventions
-	xr = x[:N]
-	xl = A.dot(x[N:]) 
-	return  (xr * xl).sum() 
-
-
-#sum_{hi | dhi = d} (x_h - x_i)(y_h - y_i)
-#sum_{hi} w_{hi} (x_h - x_i)(y_h - y_i)
-#sum_hi xh whi yh + sum_hi w_hi xi xi - sum_ih xi whi yh - sum_hi yi whi xh
-#
-def compute_crossvar(A, x):
-	N = x.shape[0]//2 #bundled two vectors together to respect calling conventions
-
-	a = x[:N]
-	b = x[N:]
-
-	ab = a*b
-
-	al = A.dot(a) 
-	bl = A.dot(b) 
-	abl = A.dot(ab) 
-	abr = A.transpose().dot(ab) 	
-	return ( 1 / (2*A.sum()) ) * (   abl.sum() + abr.sum() - a.dot(bl) - b.dot(al) )   
-
-
-def global_data_dist(A, x, Np, func=compute_moran):
-	return np.array([ func(A, xp) for xp in data_permutations(x, Np) ])
-
-def global_config_dist(G, A, x, Np, func=compute_moran):
+def global_config_dist(G, A, x, Np, func):
 	vals = []
 
 	if G.is_directed():
@@ -178,20 +94,18 @@ def global_config_dist(G, A, x, Np, func=compute_moran):
 		out_deg_seq = [d for n,d in G.out_degree]		
 		for i in range(Np):
 			Gc = nx.directed_configuration_model( in_deg_seq , out_deg_seq )
-			vals.append( func(get_adjacency(Gc), x) )
+			vals.append( func(get_adjacency(Gc), *x) )
 
 	else:
 		deg_seq = [d for n,d in G.degree]		
 		for i in range(Np):
 			Gc = nx.configuration_model( deg_seq )
-			vals.append( func(get_adjacency(Gc), x) )
+			vals.append( func(get_adjacency(Gc), *x) )
 
-	
-			
-	return vals
-	
-def global_pval(G, A, x, null="data", Np=1000, alt="greater", smooth=0, func=compute_moran, return_dists=True):
-	I = func(A, x)
+	return vals	
+
+def global_pval(G, A, x, Np, func, null="data", alt="greater", smooth=0, return_dists=True):
+	I = func(A, *x)
 	if null == "config":
 		dists = global_config_dist(G,A,x,Np,func)
 	elif null == "data":
@@ -202,109 +116,164 @@ def global_pval(G, A, x, null="data", Np=1000, alt="greater", smooth=0, func=com
 	if return_dists:
 		return I, pval(dists, I, alt=alt, smooth=smooth), dists
 	return I, pval(dists, I, alt=alt, smooth=smooth)
-
-def moran(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True):
-	A = get_adjacency(G, rownorm)
-	x = get_node_data(G, name=name) 
-	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, return_dists=return_dists)
 	
-def geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0, rownorm=True, return_dists=True):
-	A = get_adjacency(G, rownorm)
+#############################
+#Global Univariate Indices ##
+#############################
+#Moran index: I = (N/W) ( sum_ij w_ij z_i z_j ) / (sum_i z_i^2)	
+def compute_moran(A, x):
+	z = (x - x.mean())	
+	zl = A.dot(z) 
+	return (z.shape[0] / A.sum()) * ( (z * zl).sum() ) / (z**2).sum()    
+
+#Geary's C: ((N-1)/2W) (sum_ij w_ij(xi - xj)^2) / (sum_i (xi - xbar)^2
+#For numpy
+# sum_ij wij (xi - xj) (xi - xj)
+#=sum_ij wij (xi^2 - 2xi xj + xj^2)
+#=sum_i xi^2 wij + sum_j wij xj^2 - sum_ij xi wij xj - sum_ij xj wij xi
+def compute_geary(A, x):
+	z = (x - x.mean())	
+	x2 = x*x
+	xl = A.dot(x) 
+	xr = A.transpose().dot(x) 	
+	x2l = A.dot(x2) 
+	x2r = A.transpose().dot(x2) 	
+	return ( (x.shape[0]-1) / (2*A.sum()) ) * (   x2l.sum() + x2r.sum() - x.dot(xl) - x.dot(xr) ) / (z**2).sum()    
+
+#Getis Ord Statistic: G = ( sum_ij w_ij xi xj )/(sum_ij xi xj)   
+def compute_getisord(A, x):
+	xl = A.dot(x) 
+	return  (x* xl).sum() / x.sum()**2
+
+#Join Count Statistic: 	1/2 sum_ij w_ij delta_ri delta_sj
+def compute_joincount(A, x):
+	xr = np.where( x==1, 1, 0)
+	xs = np.where( x==2, 1, 0)
+	if xs.sum() == 0: xs = xr
+
+	Axs = A.dot(xs) 
+	return  (xr * Axs).sum() 
+
+#Assortativity (Newman): (sum_ij xi xj (w_ij - sum_k w_ik sum_k w_kj)) /sqrt(  (sum_ij wij xi^2 - (sum_ij xi w_ij)^2) (i <-> j)  )
+#eq 26 in https://arxiv.org/pdf/cond-mat/0209450.pdf
+##Don't use networkx version becuase it's VERY inefficient, this should be equivalent for float data, don't use for categories
+def compute_numeric_assortativity(A,x):
+	W = A.sum()
+
+	x2 = x*x
+	xl = A.dot(x) 
+	x2l = A.dot(x2) 
+	xr = A.transpose().dot(x) 	
+	x2r = A.transpose().dot(x2) 	
+	num = ((x*xl).sum()/W - (xl.sum()/W)*(xr.sum()/W)) 
+	den = np.sqrt( (x2l.sum()/W - (xl.sum()/W)**2) * (x2r.sum()/W - (xr.sum()/W)**2) ) 
+	
+	return num/den	
+	
+
+
+def moran(G, name="data", null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
 	x = get_node_data(G, name=name) 
-	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_geary, return_dists=return_dists)
+	return global_pval(G, A, [x], Np, compute_moran, null=null, alt=alt, smooth=smooth, return_dists=return_dists)
 
-def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True):
-	A = get_adjacency(G, rownorm)
+def geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
 	x = get_node_data(G, name=name) 
-	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord, return_dists=return_dists)
+	return global_pval(G, A, [x], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_geary, return_dists=return_dists)
 
-def assortativity(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True):
-	A = get_adjacency(G, rownorm)
+def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
 	x = get_node_data(G, name=name) 
-	return global_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_assortativity, return_dists=return_dists)
+	return global_pval(G, A, [x], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord, return_dists=return_dists)
 
+def numeric_assortativity(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
+	x = get_node_data(G, name=name) 
+	return global_pval(G, A, [x], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_numeric_assortativity, return_dists=return_dists)
 
+##do it this way so that the random data permutation works
 def joincount(G, r, s, name="data", null="data", Np=1000, alt="greater", smooth=0, return_dists=True):
 	A = get_adjacency(G, rownorm=False, drop_weights=True)
 	x = get_node_data(G, name=name) 
 	xr = np.where( x==r, 1, 0)
-	xs = np.where( x==s, 1, 0)
-	y = np.concatenate( (xr,xs) )
-	if r == s: y // 2
+	if r == s:
+		y= xr
+	else:
+		xs = np.where( x==s, 2, 0)
+		y = xr+xs
 
-	return global_pval(G, A, y, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_joincount, return_dists=return_dists)
+	return global_pval(G, A, [y], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_joincount, return_dists=return_dists)
+
+#############################
+#Global Bivariate Indices  ##
+#############################
+#Pearson correlation: rho = ( sum_i xi yi )/sqrt( (sum_i xi^2)( i<->j) )   
+def compute_pearson(A,x,y):
+	zx = x - np.mean(x)
+	zy = y - np.mean(y)
+	return zx.dot(zy)/np.sqrt( np.sum(zx**2) * np.sum(zy**2) )
 
 
-##TODO, fix?
-#def crossvar(G, name1, name2, null="data", Np=1000, alt="greater", smooth=0, return_dists=True):
-#	A = get_adjacency(G, rownorm=False, drop_weights=True)
-#	a = get_node_data(G, name=name1) 
-#	b = get_node_data(G, name=name2) 
-#
-#	y = np.concatenate( (a,b) )
-#	if name1 == name2: y // 2
-#
-#	return global_pval(G, A, y, null=null, Np=Np, alt=alt, smooth=smooth, func=compute_crossvar, return_dists=return_dists)
 
-
-#####################
-##Local Moran index
-#####################
-def compute_local_moran(A, x, norm=False):
-	z = (x - x.mean())	
-	zl = A.dot(z) 
-
-	if norm: return (z * zl) / (z**2).sum()    
-	return (z * zl)   #no real need to normalise
-
-#local geary sum_j w_ij (xi - xj)**2
-#= sum_j xi xi w_ij + wij xj xj - 2 xi wij xj
-#= xi^2 * w_i + x2r - 2x*xl
-def compute_local_geary(A, x, norm=False):
-	x2 = x*x
+#Cross variance: gamma = (1/2W) (sum_ij w_ij (xj - xi)(yj - yi))
+def compute_crossvar(A, x, y):   
+	xy = x*y
 	xl = A.dot(x) 
-	x2l = A.dot(x2) 
+	yl = A.dot(y) 
+	xyl = A.dot(xy) 
+	xyr = A.transpose().dot(xy) 	
+	return ( 1 / (2*A.sum()) ) * (   xyl.sum() + xyr.sum() - x.dot(yl) - y.dot(xl) )   
 
-	w =  x2*np.asarray( np.sum(A , axis=1) ).reshape( (-1,) )
-	
-	if norm: 
-		z = (x - x.mean())	
-		return (   x2l + w - 2*x*xl ) / (z**2).sum()    
-	return (   x2l + w - 2*x*xl )   #no real need to normalise
+#Lee's L: L = (N/ sum_i wi^2) (sum_i  (sum_j w_ij xj) (sum_k w_ik xk)) / sqrt( (sum_i xi^2)(i<->j) )
+def compute_lee(A,x,y):
+	zx = x - np.mean(x)
+	zy = y - np.mean(y)
 
-#this is Gstar
-def compute_local_getisordstar(A, x, norm = False):	
-	if norm:
-		return A.dot(x) /x.sum()
-	return A.dot(x)
-	
-#this is G[i] = sum_{i=/=j} wij xj/sum{i=/=j} xj
-# sum{i=/=j} xj = sum{j} xj - x[i]
-#sum_{i=/=j} wij xj = sum_{j} wij xj - wii xi
-def compute_local_getisord(A, x, norm=False):
-	if norm:	
-		return (A.dot(x) - A.diagonal()*x) / (np.ones(x.shape[0])*x.sum() - x)
-	return A.dot(x) - A.diagonal()*x
-
-def compute_local_moran_i(A, z, i):
-	return z[i] * A[i,:].dot(z)[0]
-
-def compute_local_geary_i(A, x, x2, i):
-	return  x[i]*x[i]*A[i,:].sum() + A[i,:].dot(x2)[0]  -2*x[i] * A[i,:].dot(x)[0]
-
-def compute_local_getisordstar_i(A, x, i):
-	return  x[i] * A[i,:].dot(x)[0]
+	zlx = A.dot(zx) 
+	zly = A.dot(zy) 
 		
-def compute_local_getisord_i(A, x, i):
-	return  x[i] * A[i,:].dot(x)[0] - A[i,i]*x[i]
+	rowsums =  np.asarray( np.sum(A , axis=1) ).reshape( (-1,) )
+	W = np.sum(rowsums**2)
+	
+	return (x.shape[0] / W) * ( (zlx * zly).sum() ) / np.sqrt( np.sum(zx**2) * np.sum(zy**2) )
 
-		
+def pearson(G, xname, yname, null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
+	x = get_node_data(G, name=xname) 
+	y = get_node_data(G, name=yname) 
+	
+	return global_pval(G, A, [x,y], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_pearson, return_dists=return_dists)
+
+def crossvar(G, xname, yname, null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
+	x = get_node_data(G, name=xname) 
+	y = get_node_data(G, name=yname) 
+	
+	return global_pval(G, A, [x,y], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_crossvar, return_dists=return_dists)
+
+
+
+def lee(G, xname, yname, null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
+	x = get_node_data(G, name=xname) 
+	y = get_node_data(G, name=yname) 
+	
+	return global_pval(G, A, [x, y], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_lee, return_dists=return_dists)
+	
+
+
+
+##############################################
+## Local Permutation tests
+##############################################
 def conditional_random(x,i): #keep i fixed, shuffle rest
 	N = len(x)
 	idx = list(np.random.permutation( np.concatenate( (np.arange(i), np.arange(i+1,N)) ) ) ); 
 	idx.insert(i,i)
 	return x[idx]
-	
+
+
 def local_data_dist(A, x, Np=100, stat="moran"):
 	N = len(x)
 	dists = np.zeros( (Np,N) )
@@ -330,6 +299,8 @@ def local_data_dist(A, x, Np=100, stat="moran"):
 
 	return dists
 
+
+	
 def local_config_dist(G, A, x, Np=100, stat="moran"):
 	N = len(x)
 	dists = np.zeros( (Np,N) )
@@ -380,105 +351,79 @@ def local_pval(G, A, x, null="data", Np=100, alt="greater", smooth=0, stat="mora
 		
 	return L, np.array([ pval(dists[i], L[i], alt=alt, smooth=smooth) for i in range(len(x)) ]), dists
 
-def local_moran(G, name="data", null="data", Np=1000, alt="greater", smooth=0):
-	A = get_adjacency(G)
+
+#####################
+##Local indices    ##
+#####################
+def compute_local_moran(A, x, norm=False):
+	z = (x - x.mean())	
+	zl = A.dot(z) 
+
+	if norm: return (z * zl) / (z**2).sum()    
+	return (z * zl)   #no real need to normalise
+
+#local geary sum_j w_ij (xi - xj)**2
+#= sum_j xi xi w_ij + wij xj xj - 2 xi wij xj
+#Ci = xi^2 * w_i + x2r - 2x*xl
+def compute_local_geary(A, x, norm=False):
+	x2 = x*x
+	xl = A.dot(x) 
+	x2l = A.dot(x2) 
+
+	w =  x2*np.asarray( np.sum(A , axis=1) ).reshape( (-1,) )
+	
+	if norm: 
+		z = (x - x.mean())	
+		return (   x2l + w - 2*x*xl ) / (z**2).sum()    
+	return (   x2l + w - 2*x*xl )   #no real need to normalise
+
+#this is Gstar
+def compute_local_getisordstar(A, x, norm = False):	
+	if norm:
+		return A.dot(x) /x.sum()
+	return A.dot(x)
+	
+#this is G[i] = sum_{i=/=j} wij xj/sum{i=/=j} xj
+# sum{i=/=j} xj = sum{j} xj - x[i]
+#sum_{i=/=j} wij xj = sum_{j} wij xj - wii xi
+def compute_local_getisord(A, x, norm=False):
+	if norm:	
+		return (A.dot(x) - A.diagonal()*x) / (np.ones(x.shape[0])*x.sum() - x)
+	return A.dot(x) - A.diagonal()*x
+
+
+
+##compute site value
+def compute_local_moran_i(A, z, i):
+	return z[i] * A[i,:].dot(z)[0]
+
+def compute_local_geary_i(A, x, x2, i):
+	return  x[i]*x[i]*A[i,:].sum() + A[i,:].dot(x2)[0]  -2*x[i] * A[i,:].dot(x)[0]
+
+def compute_local_getisordstar_i(A, x, i):
+	return  x[i] * A[i,:].dot(x)[0]
+		
+def compute_local_getisord_i(A, x, i):
+	return  x[i] * A[i,:].dot(x)[0] - A[i,i]*x[i]
+
+		
+
+def local_moran(G, name="data", null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
 	x = get_node_data(G, name=name) 
 	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
 
-def local_geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0):
-	A = get_adjacency(G)
+def local_geary(G, name="data", null="data", Np=100, alt="lesser", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
 	x = get_node_data(G, name=name) 
 	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="geary")
 
-def local_getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, star=True):
-	A = get_adjacency(G)
+def local_getisord(G, name="data", null="data", Np=100, alt="greater", smooth=0, star=True, rownorm=True, return_dists=True, drop_weights=True):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
 	x = get_node_data(G, name=name) 
 	if star:
 		return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="getisord*")
 	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="getisord")
 			
 	
-#################
-#Lee statistic
-################
-def compute_lee(A,x,y,loop=None):
-	zx = x - np.mean(x)
-	zy = y - np.mean(y)
 
-	zlx = A.dot(zx) 
-	zly = A.dot(zy) 
-		
-	if loop is not None:
-		rowsums =  np.asarray( np.sum(A , axis=1) ).reshape( (-1,) ) + loop
-		zlx = (zlx + loop*zx)/(rowsums)
-		zly = (zly + loop*zy)/(rowsums)	
-		W = np.sum( np.sum(A, axis=1).reshape(rowsums.shape)/(rowsums) ) 
-	else:
-		W = np.sum( np.sum(A, axis=0) ) 
-
-	return (x.shape[0] / W) * ( (zlx * zly).sum() ) / np.sqrt( np.sum(zx**2) * np.sum(zy**2) )
-	
-
-def lee_pval(G, A, x, y, null="data", Np=100, alt="greater", smooth=0):
-	r = compute_lee(A, x,y)
-
-	rs = []
-	if null == "data":
-		xdist = data_permutations(x,Np)
-		ydist = data_permutations(y,Np)
-		for xp in xdist:
-			for yp in ydist:
-				rs.append( compute_lee(A, xp,yp) )		
-	else:
-		if G.is_directed():
-			in_deg_seq = [d for n,d in G.in_degree]		
-			out_deg_seq = [d for n,d in G.out_degree]		
-			for i in range(Np):
-				Gc = nx.directed_configuration_model( in_deg_seq , out_deg_seq )
-				rs.append(  compute_lee(get_adjacency(Gc), x, y) )
-
-		else:
-			deg_seq = [d for n,d in G.degree]		
-			for i in range(Np):
-				Gc = nx.configuration_model( deg_seq )
-				rs.append(  compute_lee(get_adjacency(Gc), x, y) )
-
-
-	return r, pval(rs, r, alt=alt, smooth=smooth), rs
-
-def lee(G, xname, yname, null="data", Np=100, alt="greater", smooth=0):
-	A = get_adjacency(G)
-	x = get_node_data(G, name=xname) 
-	y = get_node_data(G, name=yname) 
-	return lee_pval(G, A, x, y, null=null, Np=Np, alt=alt, smooth=smooth)
-	
-
-
-######################
-#Pearson correlation	
-######################
-
-def compute_pearson(x,y):
-	zx = x - np.mean(x)
-	zy = y - np.mean(y)
-	return zx.dot(zy)/np.sqrt( np.sum(zx**2) * np.sum(zy**2) )
-
-
-def pearson_pval(x, y, Np=100, alt="greater", smooth=0):
-	r = compute_pearson(x,y)
-
-	rs = []
-
-	xdist = data_permutations(x,Np)
-	ydist = data_permutations(y,Np)
-	for xp in xdist:
-		for yp in ydist:
-			rs.append( compute_pearson(xp,yp) )		
-	
-	return r, pval(rs, r, alt=alt, smooth=smooth), rs
-
-def pearson(G, xname, yname, Np=100, alt="greater", smooth=0):
-	x = get_node_data(G, name=xname) 
-	y = get_node_data(G, name=yname) 
-	return pearson_pval(x, y, Np=Np, alt=alt, smooth=smooth)
-	
