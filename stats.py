@@ -1,20 +1,26 @@
 import networkx as nx
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, eye
 import itertools
 
 ######################################################
 ##Add, extract and modify data from NetworkX objects##
 ######################################################
+def get_node_data(G, name="data", nodelist=None):
 
-def get_node_data(G, name="data"):
-	return np.array( [ G.nodes[k][name] for k in G.nodes ] )
+	if nodelist is None: nodelist = list(G)
+	return np.array( [ G.nodes[k][name] for k in nodelist ] )
 
-def set_node_data(G, x, name="data"):
-	nx.set_node_attributes(G, {n:x[i] for i,n in enumerate(G.nodes)}, name)
+def set_node_data(G, x, name="data", nodelist=None):
+	if type(x) == dict:
+		nx.set_node_attributes(G, x, name)
+	else:
+		if nodelist is None: nodelist = list(G)
+		nx.set_node_attributes(G, {n:x[i] for i,n in enumerate(nodelist) }, name)
 
 def copy_node_data(Gsource, Gtarget):
-	for k in Gsource.nodes[0]:
+	element = list(Gsource.nodes.keys())[0] #any element
+	for k in Gsource.nodes[element]:
 		if k != "community":
 			set_node_data( Gtarget, get_node_data(Gsource, name=k), name=k )
 
@@ -44,8 +50,8 @@ def scale_node_data(G, s, name="data"):
 	set_node_data(G, x, name=name)
 
 
-def row_normalise(A, loop=0):
-	rowsums =  np.asarray( np.sum(A , axis=1) ).reshape( (-1,) ) + loop
+def row_normalise(A):
+	rowsums =  np.asarray( np.sum(A , axis=1) ).reshape( (-1,) ) 
 	rowsums[ rowsums == 0 ] = 1 #zero rows stay zero rows
 	rowsums = 1/rowsums
 	
@@ -53,14 +59,34 @@ def row_normalise(A, loop=0):
 	return D.dot(A) 
 
 
-def get_adjacency(G, rownorm = True, loop=0, drop_weights=True):
-	A = nx.adjacency_matrix(G).astype(float)	
+def get_adjacency(G, rownorm = True, loop=0, drop_weights=True, nodelist=None):
+	A = nx.adjacency_matrix(G, nodelist=nodelist).astype(float)	
 	if drop_weights: A[A > 0] = 1
-	if rownorm: return row_normalise(A,loop)
+	if loop != 0: A += eye( A.shape[0] )
+	if rownorm: return row_normalise(A)
 	return A
 
 
 
+
+#Compute the p-value of r given an estimate of the distribution rs = [ estimate1, estimate2, ... ]	
+#Sometimes 999 samples and +1 smoothing factor	
+def pval(rs, r, alt="greater", smooth=0):
+	m=1
+	if alt == "lesser": m=-1
+	larger = (m*np.array(rs) >= m*r).sum()
+	if alt == "two-tailed" and (len(rs) - larger) < larger: larger = len(rs) - larger
+	return (larger + smooth) / (len(rs) + smooth)
+
+def pformat(p, sig, symbol, digits=2):
+	out = r'${}'.format(symbol) 
+
+	if p < sig: 
+		out += f"< {sig:.{digits}f}" 
+	else:
+		out += f"= {p:.{digits}f}"		
+	return out + r'$'
+	
 ##############################################
 ## Global Permutation tests
 ##############################################
@@ -68,23 +94,11 @@ def data_permutations(x, Np):
 	for _ in range(Np):
 			yield np.random.permutation(x)
 
-
-#Compute the p-value of r given an estimate of the distribution rs = [ estimate1, estimate2, ... ]	
-#Sometimes 999 samples and +1 smoothing factor	
-def pval(rs, r, alt="greater", smooth=0):
-
-	m=1
-	if alt == "lesser": m=-1
-	larger = (m*np.array(rs) >= m*r).sum()
-	if alt == "two-tailed" and (len(rs) - larger) < larger: larger = len(rs) - larger
-	return (larger + smooth) / (len(rs) + smooth)
-
 ##has to work for function signatures func(A, x), func(A, x, y), ...
 def global_data_dist(A, x, Np, func):	
-
 	perms = [ data_permutations(d,Np) for d in x ]
 	return np.array([ func(A, *dp) for dp in itertools.product( *perms ) ])
-	#return np.array([ func(A, xp) for xp in data_permutations(x, Np) ])
+
 
 def global_config_dist(G, A, x, Np, func):
 	vals = []
@@ -172,30 +186,30 @@ def compute_numeric_assortativity(A,x):
 	
 
 
-def moran(G, name="data", null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
-	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
-	x = get_node_data(G, name=name) 
+def moran(G, name="data", null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True, nodelist=None):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, nodelist=nodelist)
+	x = get_node_data(G, name=name, nodelist=nodelist) 
 	return global_pval(G, A, [x], Np, compute_moran, null=null, alt=alt, smooth=smooth, return_dists=return_dists)
 
-def geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
-	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
-	x = get_node_data(G, name=name) 
+def geary(G, name="data", null="data", Np=1000, alt="lesser", smooth=0, rownorm=True, return_dists=True, drop_weights=True, nodelist=None):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, nodelist=nodelist)
+	x = get_node_data(G, name=name, nodelist=nodelist) 
 	return global_pval(G, A, [x], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_geary, return_dists=return_dists)
 
-def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
-	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
-	x = get_node_data(G, name=name) 
+def getisord(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True, nodelist=None):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, nodelist=nodelist)
+	x = get_node_data(G, name=name, nodelist=nodelist) 
 	return global_pval(G, A, [x], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_getisord, return_dists=return_dists)
 
-def numeric_assortativity(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
-	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
-	x = get_node_data(G, name=name) 
+def numeric_assortativity(G, name="data", null="data", Np=1000, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True, nodelist=None):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, nodelist=nodelist)
+	x = get_node_data(G, name=name, nodelist=nodelist) 
 	return global_pval(G, A, [x], null=null, Np=Np, alt=alt, smooth=smooth, func=compute_numeric_assortativity, return_dists=return_dists)
 
 ##do it this way so that the random data permutation works
-def joincount(G, r, s, name="data", null="data", Np=1000, alt="greater", smooth=0, return_dists=True):
-	A = get_adjacency(G, rownorm=False, drop_weights=True)
-	x = get_node_data(G, name=name) 
+def joincount(G, r, s, name="data", null="data", Np=1000, alt="greater", smooth=0, return_dists=True, nodelist=None):
+	A = get_adjacency(G, rownorm=False, drop_weights=True, nodelist=nodelist)
+	x = get_node_data(G, name=name, nodelist=nodelist) 
 	xr = np.where( x==r, 1, 0)
 	if r == s:
 		y= xr
@@ -255,7 +269,7 @@ def crossvar(G, xname, yname, null="data", Np=100, alt="greater", smooth=0, rown
 
 
 def lee(G, xname, yname, null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
-	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, loop=1)
 	x = get_node_data(G, name=xname) 
 	y = get_node_data(G, name=yname) 
 	
@@ -348,8 +362,8 @@ def local_pval(G, A, x, null="data", Np=100, alt="greater", smooth=0, stat="mora
 		dists = local_data_dist(A,x,Np,stat)
 	else:
 		return L
-		
-	return L, np.array([ pval(dists[i], L[i], alt=alt, smooth=smooth) for i in range(len(x)) ]), dists
+	
+	return L, np.array([ pval(dists[:,i], L[i], alt=alt, smooth=smooth) for i in range(len(x)) ]), dists
 
 
 #####################
@@ -408,19 +422,19 @@ def compute_local_getisord_i(A, x, i):
 
 		
 
-def local_moran(G, name="data", null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
-	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
-	x = get_node_data(G, name=name) 
+def local_moran(G, name="data", null="data", Np=100, alt="greater", smooth=0, rownorm=True, return_dists=True, drop_weights=True, nodelist=None):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, nodelist=nodelist)
+	x = get_node_data(G, name=name, nodelist=nodelist) 
 	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth)
 
-def local_geary(G, name="data", null="data", Np=100, alt="lesser", smooth=0, rownorm=True, return_dists=True, drop_weights=True):
-	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
-	x = get_node_data(G, name=name) 
+def local_geary(G, name="data", null="data", Np=100, alt="lesser", smooth=0, rownorm=True, return_dists=True, drop_weights=True, nodelist=None):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, nodelist=nodelist)
+	x = get_node_data(G, name=name, nodelist=nodelist) 
 	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="geary")
 
-def local_getisord(G, name="data", null="data", Np=100, alt="greater", smooth=0, star=True, rownorm=True, return_dists=True, drop_weights=True):
-	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights)
-	x = get_node_data(G, name=name) 
+def local_getisord(G, name="data", null="data", Np=100, alt="greater", smooth=0, star=True, rownorm=True, return_dists=True, drop_weights=True, nodelist=None):
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, nodelist=nodelist)
+	x = get_node_data(G, name=name, nodelist=nodelist) 
 	if star:
 		return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="getisord*")
 	return local_pval(G, A, x, null=null, Np=Np, alt=alt, smooth=smooth, stat="getisord")

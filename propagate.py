@@ -9,7 +9,7 @@ def set_random_data(G, name="data", randomfn=None):
 		x = np.random.random(len(G.nodes))
 	nx.set_node_attributes(G, {n:x[i] for i,n in enumerate(G.nodes)}, name)
 
-def propagate(G, source_id, source_val=1, start_val = 0, num_steps=10, clean_start=True, name="data", noise=0.1):
+def propagate(G, source_id, source_val=1, start_val = 0, num_steps=10, clean_start=True, name="data", noise=0.1, nodelist=None):
 	if clean_start:
 		for n in G.nodes: G.nodes[n][name] = start_val
 		G.nodes[source_id][name] = source_val	
@@ -22,7 +22,7 @@ def propagate(G, source_id, source_val=1, start_val = 0, num_steps=10, clean_sta
 		nx.set_node_attributes(G, nv, name)
 
 	if noise:
-		x = get_node_data(G,name=name) + np.random.normal(0,noise,size=len(G.nodes))
+		x = get_node_data(G,name=name,nodelist=nodelist) + np.random.normal(0,noise,size=len(G.nodes))
 		set_node_data(G,x,name=name)
 
 

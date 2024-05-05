@@ -4,13 +4,20 @@ import networkx as nx
 from stats import get_node_data, set_node_data, copy_node_data, get_adjacency
 from scipy.stats import linregress
 
-def draw_network_data(G, ax, name="data", colorbar=False, draw_labels=False):
-	nodes = G.nodes
-	colors = get_node_data(G, name=name)
+def draw_network_data(G, ax, seed=123456789, name="data", cbarsize=0.5, vmin=None, vmax=None, nodelist=None, colorbar=False, draw_labels=False, log=False, k=None, draw_edges=True, node_alpha=1, edge_alpha=0.1, node_size=100, cmap='rainbow'):
+	
+	if nodelist is None:
+		nodelist = G.nodes
 
-	pos = nx.spring_layout(G, seed=123456789)
-	ec = nx.draw_networkx_edges(G, pos, ax=ax, alpha=0.1)
-	nc = nx.draw_networkx_nodes(G, pos, ax=ax, node_size=100, nodelist=nodes, node_color = colors, vmin = min(0,np.min(colors)), vmax = max(1,np.max(colors)), cmap="rainbow", edgecolors=None)
+	colors = get_node_data(G, name=name, nodelist=nodelist)
+	if log: colors = np.log10(colors)
+	if vmin is None: vmin = np.min(colors)
+	if vmax is None: vmax = np.max(colors)
+		
+	pos = nx.spring_layout(G, seed=seed, k=None)
+	if draw_edges:
+		ec = nx.draw_networkx_edges(G, pos, ax=ax, alpha=edge_alpha)
+	nc = nx.draw_networkx_nodes(G, pos, ax=ax, node_size=node_size, nodelist=nodelist, node_color = colors, vmin = vmin, vmax = vmax, cmap=cmap, edgecolors=None, alpha=node_alpha)
 
 	if draw_labels: 
 		if type(draw_labels) == bool:
@@ -20,14 +27,68 @@ def draw_network_data(G, ax, name="data", colorbar=False, draw_labels=False):
 		elif type(draw_labels) ==list:
 			labels=nx.draw_networkx_labels(G,pos, labels={i:str(i) for i in draw_labels},ax=ax,font_weight="bold")
 			
-	if colorbar: plt.colorbar(nc, ax=ax)
+	if colorbar: 
+		plt.colorbar(nc, ax=ax, shrink=cbarsize)
 	ax.axis('off')
 
-def moran_scatterplot(G, ax, name="data", mean_subtract=False, rownorm=True, drop_weights=False):
+def xy_scatterplot(x, y, ax, nodelist, outlier=3):
 
+	xbar = np.mean(x)
+	ybar = np.mean(y)
 
-	A = get_adjacency(G, rownorm, drop_weights)
-	x = get_node_data(G, name)
+	ax.scatter( x, y )
+	ax.axhline(y=ybar, color='k', linestyle='--')
+	ax.axvline(x=xbar, color='k', linestyle='--')
+
+	result = linregress(x, y) #slope is moran index	
+	xu = np.linspace(min(x), max(x), 101)
+	ax.plot(xu, result.slope*xu + result.intercept, color='k', linestyle='dotted', label="{:.3f}".format(result.slope) )
+	#ax.legend()
+	
+	quadrants = {
+	"ll":{"i":[], "x":[], "y":[]}, 
+	"lr":{"i":[], "x":[], "y":[]}, 
+	"ul":{"i":[], "x":[], "y":[]}, 
+	"ur":{"i":[], "x":[], "y":[]}, 
+	"outliers":{"i":[], "x":[], "y":[]}, 
+	}
+	
+
+	for i in range(len(x)):
+		if y[i] > ybar:
+			if x[i] > xbar:
+				quadrants['ur']['i'].append(nodelist[i])
+				quadrants['ur']['x'].append(x[i])
+				quadrants['ur']['y'].append(y[i])
+			else:
+				quadrants['ul']['i'].append(nodelist[i])
+				quadrants['ul']['x'].append(x[i])
+				quadrants['ul']['y'].append(y[i])		
+		else:
+			if x[i] > xbar:
+				quadrants['lr']['i'].append(nodelist[i])
+				quadrants['lr']['x'].append(x[i])
+				quadrants['lr']['y'].append(y[i])			
+			else:
+				quadrants['ll']['i'].append(nodelist[i])
+				quadrants['ll']['x'].append(x[i])
+				quadrants['ll']['y'].append(y[i])
+
+	resid = np.abs( (result.slope * x + result.intercept) - y )
+	stderr = np.std(resid)
+	for i in range(len(x)):
+		if resid[i] > outlier*stderr:
+			quadrants['outliers']['i'].append(nodelist[i])
+			quadrants['outliers']['x'].append(x[i])
+			quadrants['outliers']['y'].append(y[i])
+				
+	return quadrants	
+
+def moran_scatterplot(G, ax, name="data", mean_subtract=False, rownorm=True, drop_weights=False, nodelist=None):
+	if nodelist is None:  nodelist = list(G)
+		
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, nodelist=nodelist)
+	x = get_node_data(G, name, nodelist=nodelist)
 
 	if mean_subtract: 
 		z = x - np.mean(x)
@@ -35,47 +96,21 @@ def moran_scatterplot(G, ax, name="data", mean_subtract=False, rownorm=True, dro
 		z = x
 	
 	zl = A.dot(z) 
-	zbar = np.mean(z)
-	zlbar = np.mean(zl)
 
+	return xy_scatterplot(z, zl, ax, nodelist)
 
-	ax.scatter( z, zl )
-	ax.axhline(y=zlbar, color='k', linestyle='--')
-	ax.axvline(x=zbar, color='k', linestyle='--')
-
-	result = linregress(z,zl) #slope is moran index	
-	xu = np.linspace(min(x), max(x), 101)
-	ax.plot(xu, result.slope*xu + result.intercept, color='k', linestyle='dotted')
+def lee_scatterplot(G, ax, name1, name2, rownorm=True, drop_weights=False, nodelist=None):
+	if nodelist is None:  nodelist = list(G)
+		
+	A = get_adjacency(G, rownorm=rownorm, drop_weights=drop_weights, nodelist=nodelist, loop=1)
+	x = get_node_data(G, name1, nodelist=nodelist)
+	y = get_node_data(G, name2, nodelist=nodelist)
 	
-	quadrants = {
-	"ll":{"i":[], "x":[], "xl":[]}, 
-	"lr":{"i":[], "x":[], "xl":[]}, 
-	"ul":{"i":[], "x":[], "xl":[]}, 
-	"ur":{"i":[], "x":[], "xl":[]}, 
-	}
+	xl = A.dot(x) 
+	yl = A.dot(y) 
 
-	for i in range(len(z)):
-		if zl[i] > zlbar:
-			if z[i] > zbar:
-				quadrants['ur']['i'].append(i)
-				quadrants['ur']['x'].append(z[i])
-				quadrants['ur']['xl'].append(zl[i])
-			else:
-				quadrants['ul']['i'].append(i)
-				quadrants['ul']['x'].append(z[i])
-				quadrants['ul']['xl'].append(zl[i])		
-		else:
-			if z[i] > zbar:
-				quadrants['lr']['i'].append(i)
-				quadrants['lr']['x'].append(z[i])
-				quadrants['lr']['xl'].append(zl[i])			
-			else:
-				quadrants['ll']['i'].append(i)
-				quadrants['ll']['x'].append(z[i])
-				quadrants['ll']['xl'].append(zl[i])
+	return xy_scatterplot(xl, yl, ax, nodelist)
 
-				
-	return quadrants	
 
 
 def xogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth=0, rownorm=True, drop_weights=False):
@@ -87,25 +122,29 @@ def xogram(G, func, dmin=1, dmax=None, null="data", Np=1000, name="data", smooth
 		dmax = len( max(paths[smax].items(), key= lambda t:t[1])[1] )
 
 	corr = []
+	graphs = []
 	for d in range(dmin,dmax+1):
 		if G.is_directed():
 			Gd = nx.DiGraph() 
 		else:
 			Gd = nx.Graph() 
-		Gd.add_nodes_from( G.nodes )
-
-		copy_node_data( G, Gd )
+		#Gd.add_nodes_from( G.nodes )
+		#copy_node_data( G, Gd )
 		
+		node_data = {}
 		for source, path in paths.items():
 			for dest,p in path.items():
 				if source == dest: continue
 
 				if len(p) == d+1:
 					Gd.add_edge( source, dest )
-		
+					node_data[ source ] = G.nodes[ source ][ name ]
+					node_data[ dest ] = G.nodes[ dest ][ name ]
 
+		nx.set_node_attributes(Gd, node_data, name)
+		graphs.append(Gd)
 		corr.append( func(Gd, Np=Np, name=name, null=null, smooth=smooth, rownorm=rownorm, return_dists=False, drop_weights=drop_weights) )
-	return list(range(dmin,dmax+1)), corr
+	return list(range(dmin,dmax+1)), corr, graphs
 
 from stats import moran
 def moran_correlogram(G, dmin=1, dmax=None, null="data", Np=1000, name="data",  smooth=0, rownorm=True, drop_weights=True):

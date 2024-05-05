@@ -30,10 +30,10 @@ quadrants = moran_scatterplot(G, ax, mean_subtract=False)
 ax.set_xlabel("x")
 ax.set_ylabel("Ax")	
 
-ax.scatter( quadrants['ul']['x'], quadrants['ul']['xl'] , edgecolors='k', color='C0') 
-ax.scatter( quadrants['ur']['x'], quadrants['ur']['xl'] , edgecolors='k', color='C1') 
-ax.scatter( quadrants['ll']['x'], quadrants['ll']['xl'] , edgecolors='k', color='C2') 
-ax.scatter( quadrants['lr']['x'], quadrants['lr']['xl'] , edgecolors='k', color='C3') 
+ax.scatter( quadrants['ul']['x'], quadrants['ul']['y'] , edgecolors='k', color='C0') 
+ax.scatter( quadrants['ur']['x'], quadrants['ur']['y'] , edgecolors='k', color='C1') 
+ax.scatter( quadrants['ll']['x'], quadrants['ll']['y'] , edgecolors='k', color='C2') 
+ax.scatter( quadrants['lr']['x'], quadrants['lr']['y'] , edgecolors='k', color='C3') 
 
 
 

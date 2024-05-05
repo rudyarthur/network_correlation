@@ -6,24 +6,25 @@ import networkx as nx
 from propagate import *
 from stats import *
 from plots import *
+import random
 
 import sys
 
 matplotlib.rcParams.update({'font.size': 22})
 
 np.random.seed(123456789)	
+random.seed(123456789)
 
-
-fig, ax = plt.subplots(4,3,figsize=(12,16))	
+fig, ax = plt.subplots(2,2,figsize=(8,8))	
 G = nx.karate_club_graph(); 
-#G = nx.LFR_benchmark_graph(100, 2.1, 1.5, 0.05, average_degree=10, max_degree=30, min_community=20, seed=123456789)
+
+
 
 G.remove_edges_from(nx.selfloop_edges(G))
 N = len(G.nodes)
 
 source_id = 1
 propagate(G, source_id, num_steps=10, noise=0.1)	
-
 
 	
 Np=100
@@ -32,7 +33,7 @@ for mi, null in enumerate(["data", "config"]):
 	
 	#Moran
 	L, pvals, dists = local_moran(G,null=null,Np=Np)
-	freqs,bins,patches = ax[2*mi][0].hist(L, bins = np.linspace(-0.2,0.2,41), density=True)	
+	freqs,bins,patches = ax[1][mi].hist(L, bins = np.linspace(-0.2,0.2,41), density=True)	
 	Lbins = []
 	Lfreqs = []
 	labs = []
@@ -43,12 +44,13 @@ for mi, null in enumerate(["data", "config"]):
 					patches[b].set_fc('C1')
 					labs.append(i)
 
-	ax[2*mi][0].set_xlabel(r"$I_i$")
-	ax[2*mi][0].set_ylabel(r"$P(I_i)$")
-				
-	draw_network_data(G, ax[2*mi+1][0], colorbar=False, draw_labels= labs)
+	ax[1][mi].set_title("")
+	ax[1][mi].set_xlabel(r"$I_i$")
+	ax[1][mi].set_ylabel(r"$P_{}(I_i)$".format(null[0]) )
+	
+	draw_network_data(G, ax[0][mi], colorbar=False, draw_labels= labs)
 
-
+	"""
 	#Geary
 	L, pvals, dists = local_geary(G,null=null,Np=Np)
 	freqs,bins,patches = ax[2*mi][1].hist(L, bins = np.linspace(0,0.4,41), density=True)	
@@ -81,11 +83,11 @@ for mi, null in enumerate(["data", "config"]):
 	ax[2*mi][2].set_ylabel(r"$P(G^*_i)$")
 			
 	draw_network_data(G, ax[2*mi+1][2], colorbar=False, draw_labels= labs)
-
+	"""
 
 fig.tight_layout()
-plt.savefig("local_stats.png", dpi=fig.dpi)
-#plt.show()
+plt.savefig("local_moran.png", dpi=fig.dpi)
+plt.show()
 
 
 
